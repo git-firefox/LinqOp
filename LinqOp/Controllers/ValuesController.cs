@@ -11,10 +11,11 @@ namespace LinqOp.Controllers
     public class ValuesController : ControllerBase
     {
         private readonly OrderContext _context;
-
-        public ValuesController(OrderContext context)
+        private readonly IWebHostEnvironment _hostEnvironment;
+        public ValuesController(OrderContext context, IWebHostEnvironment  hostEnvironment)
         {
             _context = context;
+            _hostEnvironment = hostEnvironment;
         }
 
         // GET: api/<ValuesController>
@@ -25,7 +26,37 @@ namespace LinqOp.Controllers
             return Ok(await orders.ToListAsync());
         }
 
+        [HttpPost("[action]")]
+        public async Task<IActionResult> Orders()
+        {
+            return await ReadJsonFromFile("data-all-order.json");
+        }
 
+        [HttpPost("[action]")]
+        public async Task<IActionResult> OrderItems()
+        {
+            return await ReadJsonFromFile("data-order-items.json");
+        }
+
+
+        [HttpPost("[action]")]
+        public async Task<IActionResult> Items()
+        {
+            return await ReadJsonFromFile("data-items.json");
+        }
+
+        private async Task<IActionResult> ReadJsonFromFile(string fileName)
+        {
+            string filePath = Path.Combine(_hostEnvironment.WebRootPath, fileName);
+
+            if (!System.IO.File.Exists(filePath))
+            {
+                return NotFound(new { message = $"JSON file '{fileName}' not found" });
+            }
+
+            string jsonContent = await System.IO.File.ReadAllTextAsync(filePath);
+            return Content(jsonContent, "application/json");
+        }
         private IQueryable<OrderViewModel> GetOrders(long StoreId, int? Payee = null, DateTime? FromDate = null, DateTime? ToDate = null)
         {
             var query = _context.tblPOSOrderMasters
@@ -67,6 +98,8 @@ namespace LinqOp.Controllers
             //    Margin = 0
             //});
 
+
+
             var orderDetails = from od in _context.tblPOSOrderDetails
                                join vi in _context.tblVendorsItems
                                on od.Itemkey equals vi.Itemkey
@@ -85,7 +118,7 @@ namespace LinqOp.Controllers
                                    TotalRetail = g.Sum(x => x.UnitRetail),
                                    Margin = g.Sum(x => x.UnitRetail - x.UnitCost),
                                    TotalMarginPercentage = g.Sum(x => x.UnitRetail) > 0
-                                      ? (g.Sum(x => x.Margin) / g.Sum(x => x.UnitRetail)) * 100
+                                      ? (Math.Round(g.Sum(x => x.Margin), 2) / g.Sum(x => x.UnitRetail)) * 100
                                       : 0
                                };
 

@@ -1,0 +1,6 @@
+@LinqOp9_HostAddress = http://localhost:5225
+
+GET {{LinqOp9_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

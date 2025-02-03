@@ -16,6 +16,17 @@ builder.Services.AddDbContextPool<OrderContext>((DbContextOptionsBuilder dbConte
         options.CommandTimeout(180);
     });
 });
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(
+        policy =>
+        {
+            policy.AllowAnyOrigin()  // Allows any origin
+                  .AllowAnyMethod()  // Allows any HTTP method (GET, POST, etc.)
+                  .AllowAnyHeader(); // Allows any header
+        });
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -26,6 +37,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseStaticFiles(); // Enable serving static files
+
+app.UseCors();
 
 app.UseAuthorization();
 
