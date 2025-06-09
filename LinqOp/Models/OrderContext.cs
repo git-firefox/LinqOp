@@ -12,6 +12,7 @@ namespace LinqOp.Models
         required public DbSet<POSOrderMaster> tblPOSOrderMasters { get; set; }
         required public DbSet<POSOrderDetail> tblPOSOrderDetails { get; set; }
         required public DbSet<VendorItem> tblVendorsItems { get; set; }
+        required public DbSet<Post> Posts { get; set; }
 
     }
 }

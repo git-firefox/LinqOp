@@ -45,6 +45,12 @@ namespace LinqOp.Controllers
             return await ReadJsonFromFile("data-items.json");
         }
 
+        [HttpPost("[action]")]
+        public async Task<IActionResult> GetSelectInventory()
+        {
+            return await ReadJsonFromFile("data-GetSelectInventory.json");
+        }
+
         private async Task<IActionResult> ReadJsonFromFile(string fileName)
         {
             string filePath = Path.Combine(_hostEnvironment.WebRootPath, fileName);
