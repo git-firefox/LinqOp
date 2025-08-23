@@ -1,4 +1,6 @@
-﻿using LinqOp.Models;
+﻿using System.Text.Json;
+using LinqOp.Models;
+using LinqOp.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,7 +14,7 @@ namespace LinqOp.Controllers
     {
         private readonly OrderContext _context;
         private readonly IWebHostEnvironment _hostEnvironment;
-        public ValuesController(OrderContext context, IWebHostEnvironment  hostEnvironment)
+        public ValuesController(OrderContext context, IWebHostEnvironment hostEnvironment)
         {
             _context = context;
             _hostEnvironment = hostEnvironment;
@@ -51,6 +53,32 @@ namespace LinqOp.Controllers
             return await ReadJsonFromFile("data-GetSelectInventory.json");
         }
 
+        [HttpPost("[action]")]
+        public async Task<IActionResult> GetFilteredInventory(DataSourceRequest request)
+        {
+            var orderSummaryResult = await ReadJsonFromFile<OrderSummaryResult>("data-all-order.json");
+            var orderSummaries = orderSummaryResult.Data;
+
+            //var request = new DataSourceRequest
+            //{
+            //    Skip = 0,
+            //    Take = 5,
+            //    Sorts = new List<SortDescriptor>() {
+            //        new SortDescriptor { Member = "OrderID", Dir = SortDirection.Asc },
+            //    },
+            //    Filters = {
+            //        new FilterDescriptor { Member = "orderType", Value = "0", Operator = FilterOperator.Eq },
+            //    }
+            //};
+
+            //var d2 = new DataSourceResult<OrderSummary>([.. orderSummariesQuery.ToList()], orderSummariesQuery.Count());
+
+            var d = orderSummaries.ToDataSourceResult(request);
+
+
+            return Ok(d);
+        }
+
         private async Task<IActionResult> ReadJsonFromFile(string fileName)
         {
             string filePath = Path.Combine(_hostEnvironment.WebRootPath, fileName);
@@ -63,6 +91,17 @@ namespace LinqOp.Controllers
             string jsonContent = await System.IO.File.ReadAllTextAsync(filePath);
             return Content(jsonContent, "application/json");
         }
+
+        private async Task<TResult> ReadJsonFromFile<TResult>(string fileName)
+        {
+            string filePath = Path.Combine(_hostEnvironment.WebRootPath, fileName);
+            string jsonContent = await System.IO.File.ReadAllTextAsync(filePath);
+            return JsonSerializer.Deserialize<TResult>(jsonContent, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            })!;
+        }
+
         private IQueryable<OrderViewModel> GetOrders(long StoreId, int? Payee = null, DateTime? FromDate = null, DateTime? ToDate = null)
         {
             var query = _context.tblPOSOrderMasters
