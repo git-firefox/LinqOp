@@ -1,4 +1,5 @@
 ﻿using System.Linq.Expressions;
+using System.Reflection;
 using LinqOp.Models;
 
 namespace LinqOp.Extensions;
@@ -12,7 +13,7 @@ public static class EnumerableExtensions
         // Apply Filters
         foreach (var filter in request.Filters)
         {
-            var propertyInfo = typeof(TResult).GetProperty(filter.Member);
+            var propertyInfo = typeof(TResult).GetProperty(filter.Member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
             if (propertyInfo == null) continue;
 
             var param = Expression.Parameter(typeof(TResult), "x");
@@ -33,7 +34,7 @@ public static class EnumerableExtensions
         for (int i = 0; i < request.Sorts.Count; i++)
         {
             var sort = request.Sorts[i];
-            var propertyInfo = typeof(TResult).GetProperty(sort.Member);
+            var propertyInfo = typeof(TResult).GetProperty(sort.Member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
             if (propertyInfo == null) continue;
 
             var param = Expression.Parameter(typeof(TResult), "x");
@@ -52,7 +53,59 @@ public static class EnumerableExtensions
         // Paging
         var items = query.Skip(request.Skip).Take(request.Take).ToList();
 
-        return new DataSourceResult<TResult>(items, total);
+        // Aggregates
+        IDictionary<string, IDictionary<string, object>>? aggregates = null;
+        if (request.Aggregates.Any())
+        {
+            aggregates = new Dictionary<string, IDictionary<string, object>>();
+
+            foreach (var group in request.Aggregates.GroupBy(a => a.Member))
+            {
+                var dict = new Dictionary<string, object>();
+
+                var prop = typeof(TResult).GetProperty(group.Key, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+                if (prop == null) continue;
+
+                List<object?> values = [.. query.Select(x => prop.GetValue(x, null)).Where(v => v != null)];
+
+                Type targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+
+                var nonNullValues = values.Where(v => v != null).ToList();
+
+                foreach (var agg in group)
+                {
+                    if (!IsAggregatable(targetType, agg.Aggregate))
+                        continue;
+
+                    object? result = agg.Aggregate switch
+                    {
+                        AggregateFunction.Sum => nonNullValues.OfType<IConvertible>().Any()
+                            ? nonNullValues.OfType<IConvertible>().Sum(v => Convert.ToDecimal(v))
+                            : null,
+
+                        AggregateFunction.Min => nonNullValues.Any() ? nonNullValues.Min()! : null,
+
+                        AggregateFunction.Max => nonNullValues.Any() ? nonNullValues.Max()! : null,
+
+                        AggregateFunction.Average => nonNullValues.OfType<IConvertible>().Any()
+                            ? nonNullValues.OfType<IConvertible>().Average(v => Convert.ToDecimal(v))
+                            : null,
+
+                        AggregateFunction.Count => values.Count,
+
+                        _ => null
+                    };
+
+                    if (result != null)
+                        dict[agg.Aggregate.ToString().ToLower()] = result;
+                }
+
+                if (dict.Any())
+                    aggregates[group.Key] = dict;
+            }
+        }
+
+        return new DataSourceResult<TResult>(items, total, aggregates);
     }
 
     private static (ConstantExpression? ConstantExpression, Type? Type) GetConstant(MemberExpression member, string? value)
@@ -137,4 +190,39 @@ public static class EnumerableExtensions
             _ => Expression.Equal(property, constant),
         };
     }
+
+    private static bool IsNumericType(Type type)
+    {
+        if (type.IsEnum) return false;
+
+        switch (Type.GetTypeCode(type))
+        {
+            case TypeCode.Byte:
+            case TypeCode.SByte:
+            case TypeCode.UInt16:
+            case TypeCode.UInt32:
+            case TypeCode.UInt64:
+            case TypeCode.Int16:
+            case TypeCode.Int32:
+            case TypeCode.Int64:
+            case TypeCode.Decimal:
+            case TypeCode.Double:
+            case TypeCode.Single:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool IsAggregatable(Type type, AggregateFunction function)
+    {
+        if (function == AggregateFunction.Count)
+            return true;
+
+        if (IsNumericType(type) || type == typeof(DateTime))
+            return true;
+
+        return false;
+    }
+
 }

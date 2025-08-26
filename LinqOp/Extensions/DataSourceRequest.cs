@@ -26,6 +26,22 @@ public enum SortDirection
     Desc  // "desc"
 }
 
+public enum AggregateFunction
+{
+    Sum,
+    Min,
+    Max,
+    Average,
+    Count
+}
+
+public class AggregateDescriptor
+{
+    public string Member { get; set; } = string.Empty;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public AggregateFunction Aggregate { get; set; }
+}
+
 public class SortDescriptor
 {
     public string Member { get; set; } = string.Empty;  // e.g. "Name"
@@ -48,16 +64,21 @@ public class DataSourceRequest
     public int Take { get; set; }
     public IList<SortDescriptor> Sorts { get; set; } = new List<SortDescriptor>();
     public IList<FilterDescriptor> Filters { get; set; } = new List<FilterDescriptor>();
+    public IList<AggregateDescriptor> Aggregates { get; set; } = new List<AggregateDescriptor>();
+
 }
 
 public class DataSourceResult<TResult> where TResult : class
 {
-    public DataSourceResult(IEnumerable<TResult> data, int total)
+    public DataSourceResult(IList<TResult> data, int total, IDictionary<string, IDictionary<string, object>>? aggregates = null)
     {
         Data = data;
         Total = total;
+        Aggregates = aggregates;
     }
 
     public IEnumerable<TResult> Data { get; private set; }
     public int Total { get; private set; }
+    public IDictionary<string, IDictionary<string, object>>? Aggregates { get; }
+
 }
