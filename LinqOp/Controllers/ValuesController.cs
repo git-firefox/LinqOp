@@ -3,6 +3,7 @@ using LinqOp.Models;
 using LinqOp.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using LinqOp.BikeStoresDBModels;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
@@ -13,11 +14,13 @@ namespace LinqOp.Controllers
     public class ValuesController : ControllerBase
     {
         private readonly OrderContext _context;
+        private readonly BikeStoresContext _bikeStoresContext;
         private readonly IWebHostEnvironment _hostEnvironment;
-        public ValuesController(OrderContext context, IWebHostEnvironment hostEnvironment)
+        public ValuesController(OrderContext context, IWebHostEnvironment hostEnvironment, BikeStoresContext bikeStoresContext)
         {
             _context = context;
             _hostEnvironment = hostEnvironment;
+            _bikeStoresContext = bikeStoresContext;
         }
 
         // GET: api/<ValuesController>
@@ -56,6 +59,27 @@ namespace LinqOp.Controllers
         [HttpPost("[action]")]
         public async Task<IActionResult> GetFilteredInventory(DataSourceRequest request)
         {
+
+            var query = _bikeStoresContext.Products
+    //.Where(p => p.ProductId == 1) // filter if needed
+    .Select(p => new
+    {
+        p.ProductId,
+        p.ProductName,
+        p.BrandId,
+        BrandName = p.Brand.BrandName,
+        p.CategoryId,
+        CategoryName = p.Category.CategoryName,
+        p.ModelYear,
+        p.ListPrice
+    });
+
+
+
+            var queryResult = await query.ToDataSourceResultAsync(request);
+
+            return Ok(queryResult);
+
             var orderSummaryResult = await ReadJsonFromFile<OrderSummaryResult>("data-all-order.json");
             var orderSummaries = orderSummaryResult.Data;
 
@@ -73,10 +97,10 @@ namespace LinqOp.Controllers
 
             //var d2 = new DataSourceResult<OrderSummary>([.. orderSummariesQuery.ToList()], orderSummariesQuery.Count());
 
-            var d = orderSummaries.ToDataSourceResult(request);
+            var result = orderSummaries.ToDataSourceResult(request);
 
 
-            return Ok(d);
+            return Ok(result);
         }
 
         private async Task<IActionResult> ReadJsonFromFile(string fileName)

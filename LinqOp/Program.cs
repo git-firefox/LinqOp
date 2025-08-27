@@ -1,3 +1,4 @@
+using LinqOp.BikeStoresDBModels;
 using LinqOp.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,6 +13,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContextPool<OrderContext>((DbContextOptionsBuilder dbContextOptionsBuilder) =>
 {
     dbContextOptionsBuilder.UseSqlServer(builder.Configuration.GetConnectionString("LinqOpConnection"), options =>
+    {
+        options.CommandTimeout(180);
+    });
+});
+builder.Services.AddDbContextPool<BikeStoresContext>((DbContextOptionsBuilder dbContextOptionsBuilder) =>
+{
+    dbContextOptionsBuilder.UseSqlServer(builder.Configuration.GetConnectionString("BikeStoresConnection"), options =>
     {
         options.CommandTimeout(180);
     });
