@@ -25,70 +25,18 @@ public static class EnumerableExtensions
             query = ApplySorting(query, request.Sorts);
         }
 
-        //IDictionary<string, IDictionary<string, object>>? aggregates = null;
-        //if (request.Aggregates.Count != 0)
-        //{
-        //    aggregates = ApplyAggregates(query, request.Aggregates);
-        //}
+        IDictionary<string, IDictionary<string, object>>? aggregates = null;
+        if (request.Aggregates.Count != 0)
+        {
+            aggregates = ApplyAggregates(query, request.Aggregates);
+        }
 
-        // Paging
+        // Apply Aggregates 
         if (request.Take <= 0)
         {
             request.Take = 10; // set default to 10
         }
         var items = query.Skip(request.Skip).Take(request.Take).ToList();
-
-        // Aggregates
-        IDictionary<string, IDictionary<string, object>>? aggregates = null;
-        if (request.Aggregates.Any())
-        {
-            aggregates = new Dictionary<string, IDictionary<string, object>>();
-
-            foreach (var group in request.Aggregates.GroupBy(a => a.Member))
-            {
-                var dict = new Dictionary<string, object>();
-
-                var prop = typeof(TResult).GetProperty(group.Key, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-                if (prop == null) continue;
-
-                List<object?> values = [.. query.Select(x => prop.GetValue(x, null)).Where(v => v != null)];
-
-                Type targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-
-                var nonNullValues = values.Where(v => v != null).ToList();
-
-                foreach (var agg in group)
-                {
-                    if (!IsAggregatable(targetType, agg.Aggregate))
-                        continue;
-
-                    object? result = agg.Aggregate switch
-                    {
-                        AggregateFunction.Sum => nonNullValues.OfType<IConvertible>().Any()
-                            ? nonNullValues.OfType<IConvertible>().Sum(v => Convert.ToDecimal(v))
-                            : null,
-
-                        AggregateFunction.Min => nonNullValues.Any() ? nonNullValues.Min()! : null,
-
-                        AggregateFunction.Max => nonNullValues.Any() ? nonNullValues.Max()! : null,
-
-                        AggregateFunction.Average => nonNullValues.OfType<IConvertible>().Any()
-                            ? nonNullValues.OfType<IConvertible>().Average(v => Convert.ToDecimal(v))
-                            : null,
-
-                        AggregateFunction.Count => values.Count,
-
-                        _ => null
-                    };
-
-                    if (result != null)
-                        dict[agg.Aggregate.ToString().ToLower()] = result;
-                }
-
-                if (dict.Any())
-                    aggregates[group.Key] = dict;
-            }
-        }
 
         return new DataSourceResult<TResult>(items, total, aggregates);
     }
@@ -137,62 +85,119 @@ public static class EnumerableExtensions
         return query;
     }
 
-    private static async Task<IDictionary<string, IDictionary<string, object>>> ApplyAggregates<TResult>(
+    private static IDictionary<string, IDictionary<string, object>> ApplyAggregates<TResult>(
             IEnumerable<TResult> query,
             IList<AggregateDescriptor> aggregates)
     {
-        //var results = new Dictionary<string, IDictionary<string, object>>();
+        var results = new Dictionary<string, IDictionary<string, object>>();
 
-        //foreach (var group in aggregates.GroupBy(a => a.Member))
+        foreach (var group in aggregates.GroupBy(a => a.Member))
+        {
+
+            var member = group.Key;
+            var prop = typeof(TResult).GetProperty(member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+            if (prop == null) continue;
+
+            var parameter = Expression.Parameter(typeof(TResult), "x");
+            var property = Expression.PropertyOrField(parameter, member);
+            var lambda = Expression.Lambda(property, parameter);
+            var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            var aggResults = new Dictionary<string, object>();
+
+            foreach (var agg in group)
+            {
+                if (!IsAggregatable(targetType, agg.Aggregate))
+                    continue;
+
+                object? result = null;
+                switch (agg.Aggregate)
+                {
+                    case AggregateFunction.Count:
+                        result = query.Count();
+                        break;
+
+                    case AggregateFunction.Sum:
+                        var sumLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter).Compile();
+                        result = query.Sum(sumLambda);
+                        break;
+
+                    case AggregateFunction.Min:
+                        var minLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter).Compile();
+                        result = query.Min(minLambda);
+                        break;
+
+                    case AggregateFunction.Max:
+                        var maxLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter).Compile();
+                        result = query.Max(maxLambda);
+                        break;
+
+                    case AggregateFunction.Average:
+                        var avgLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter).Compile();
+                        result = query.Average(avgLambda);
+                        break;
+                }
+
+                if (result != null)
+                    aggResults[agg.Aggregate.ToString().ToLower()] = result;
+            }
+
+            results[member] = aggResults;
+        }
+
+
+        // Aggregates
+        //IDictionary<string, IDictionary<string, object>>? aggregates = null;
+        //if (request.Aggregates.Any())
         //{
-        //    var member = group.Key;
-        //    var prop = typeof(TResult).GetProperty(member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-        //    if (prop == null) continue;
+        //    aggregates = new Dictionary<string, IDictionary<string, object>>();
 
-        //    var parameter = Expression.Parameter(typeof(TResult), "x");
-        //    var property = Expression.PropertyOrField(parameter, member);
-        //    var lambda = Expression.Lambda(property, parameter);
-        //    var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-        //    var aggResults = new Dictionary<string, object>();
-
-        //    foreach (var agg in group)
+        //    foreach (var group in request.Aggregates.GroupBy(a => a.Member))
         //    {
-        //        if (!IsAggregatable(targetType, agg.Aggregate))
-        //            continue;
+        //        var dict = new Dictionary<string, object>();
 
-        //        switch (agg.Aggregate)
+        //        var prop = typeof(TResult).GetProperty(group.Key, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+        //        if (prop == null) continue;
+
+        //        List<object?> values = [.. query.Select(x => prop.GetValue(x, null)).Where(v => v != null)];
+
+        //        Type targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+
+        //        var nonNullValues = values.Where(v => v != null).ToList();
+
+        //        foreach (var agg in group)
         //        {
-        //            case AggregateFunction.Count:
-        //                aggResults["Count"] = await query.CountAsync(cancellationToken);
-        //                break;
+        //            if (!IsAggregatable(targetType, agg.Aggregate))
+        //                continue;
 
-        //            case AggregateFunction.Sum:
-        //                var sumLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter);
-        //                aggResults["Sum"] = await query.SumAsync(sumLambda, cancellationToken);
-        //                break;
+        //            object? result = agg.Aggregate switch
+        //            {
+        //                AggregateFunction.Sum => nonNullValues.OfType<IConvertible>().Any()
+        //                    ? nonNullValues.OfType<IConvertible>().Sum(v => Convert.ToDecimal(v))
+        //                    : null,
 
-        //            case AggregateFunction.Min:
-        //                var minLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter);
-        //                aggResults["Min"] = await query.MinAsync(minLambda, cancellationToken);
-        //                break;
+        //                AggregateFunction.Min => nonNullValues.Any() ? nonNullValues.Min()! : null,
 
-        //            case AggregateFunction.Max:
-        //                var maxLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter);
-        //                aggResults["Max"] = await query.MaxAsync(maxLambda, cancellationToken);
-        //                break;
+        //                AggregateFunction.Max => nonNullValues.Any() ? nonNullValues.Max()! : null,
 
-        //            case AggregateFunction.Average:
-        //                var avgLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter);
-        //                aggResults["Average"] = await query.AverageAsync(avgLambda, cancellationToken);
-        //                break;
+        //                AggregateFunction.Average => nonNullValues.OfType<IConvertible>().Any()
+        //                    ? nonNullValues.OfType<IConvertible>().Average(v => Convert.ToDecimal(v))
+        //                    : null,
+
+        //                AggregateFunction.Count => values.Count,
+
+        //                _ => null
+        //            };
+
+        //            if (result != null)
+        //                dict[agg.Aggregate.ToString().ToLower()] = result;
         //        }
-        //    }
 
-        //    results[member] = aggResults;
+        //        if (dict.Any())
+        //            aggregates[group.Key] = dict;
+        //    }
         //}
 
-        //return results;
-        return default!;
+        return results;
     }
 
     private static (ConstantExpression? ConstantExpression, Type? Type) GetConstant(MemberExpression member, string? value)

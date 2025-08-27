@@ -7,10 +7,10 @@ namespace LinqOp.Extensions;
 
 public static class QueryableExtensions
 {
-    public static async Task<DataSourceResult<T>> ToDataSourceResultAsync<T>(
-        this IQueryable<T> query,
+    public static async Task<DataSourceResult<TResult>> ToDataSourceResultAsync<TResult>(
+        this IQueryable<TResult> query,
         DataSourceRequest request,
-        CancellationToken cancellationToken = default) where T : class
+        CancellationToken cancellationToken = default) where TResult : class
     {
         // Apply filtering
         if (request.Filters.Count != 0)
@@ -44,40 +44,40 @@ public static class QueryableExtensions
         // Execute query
         var data = await query.ToListAsync(cancellationToken);
 
-        return new DataSourceResult<T>(data, total, aggregates);
+        return new DataSourceResult<TResult>(data, total, aggregates);
     }
 
-    private static IQueryable<TQuery> ApplyFilters<TQuery>(IQueryable<TQuery> query, IList<FilterDescriptor> filters)
+    private static IQueryable<TResult> ApplyFilters<TResult>(IQueryable<TResult> query, IList<FilterDescriptor> filters)
     {
         foreach (var filter in filters)
         {
-            var propertyInfo = typeof(TQuery).GetProperty(filter.Member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+            var propertyInfo = typeof(TResult).GetProperty(filter.Member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
             if (propertyInfo == null) continue;
 
-            var parameter = Expression.Parameter(typeof(TQuery), "x");
+            var parameter = Expression.Parameter(typeof(TResult), "x");
             var member = Expression.PropertyOrField(parameter, filter.Member);
 
             var body = BuildFilterExpression(member, filter.Operator, filter.Value);
 
             if (body == null) continue;
 
-            var lambda = Expression.Lambda<Func<TQuery, bool>>(body, parameter);
+            var lambda = Expression.Lambda<Func<TResult, bool>>(body, parameter);
             query = query.Where(lambda);
         }
 
         return query;
     }
 
-    private static IQueryable<TQuery> ApplySorting<TQuery>(IQueryable<TQuery> query, IList<SortDescriptor> sorts)
+    private static IQueryable<TResult> ApplySorting<TResult>(IQueryable<TResult> query, IList<SortDescriptor> sorts)
     {
         bool first = true;
 
         foreach (var sort in sorts)
         {
-            var propertyInfo = typeof(TQuery).GetProperty(sort.Member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+            var propertyInfo = typeof(TResult).GetProperty(sort.Member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
             if (propertyInfo == null) continue;
 
-            var parameter = Expression.Parameter(typeof(TQuery), "x");
+            var parameter = Expression.Parameter(typeof(TResult), "x");
             var member = Expression.PropertyOrField(parameter, sort.Member);
             var lambda = Expression.Lambda(member, parameter);
 
@@ -85,11 +85,11 @@ public static class QueryableExtensions
                 ? (sort.Dir == SortDirection.Asc ? "OrderBy" : "OrderByDescending")
                 : (sort.Dir == SortDirection.Asc ? "ThenBy" : "ThenByDescending");
 
-            query = query.Provider.CreateQuery<TQuery>(
+            query = query.Provider.CreateQuery<TResult>(
                 Expression.Call(
                     typeof(Queryable),
                     method,
-                    [typeof(TQuery), member.Type],
+                    [typeof(TResult), member.Type],
                     query.Expression,
                     Expression.Quote(lambda)));
 
@@ -99,8 +99,8 @@ public static class QueryableExtensions
         return query;
     }
 
-    private static async Task<IDictionary<string, IDictionary<string, object>>> ApplyAggregates<TQuery>(
-            IQueryable<TQuery> query,
+    private static async Task<IDictionary<string, IDictionary<string, object>>> ApplyAggregates<TResult >(
+            IQueryable<TResult> query,
             IList<AggregateDescriptor> aggregates,
             CancellationToken cancellationToken)
     {
@@ -109,10 +109,10 @@ public static class QueryableExtensions
         foreach (var group in aggregates.GroupBy(a => a.Member))
         {
             var member = group.Key;
-            var prop = typeof(TQuery).GetProperty(member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+            var prop = typeof(TResult).GetProperty(member, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
             if (prop == null) continue;
 
-            var parameter = Expression.Parameter(typeof(TQuery), "x");
+            var parameter = Expression.Parameter(typeof(TResult), "x");
             var property = Expression.PropertyOrField(parameter, member);
             var lambda = Expression.Lambda(property, parameter);
             var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
@@ -130,22 +130,22 @@ public static class QueryableExtensions
                         break;
 
                     case AggregateFunction.Sum:
-                        var sumLambda = Expression.Lambda<Func<TQuery, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter);
+                        var sumLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter);
                         aggResults["Sum"] = await query.SumAsync(sumLambda, cancellationToken);
                         break;
 
                     case AggregateFunction.Min:
-                        var minLambda = Expression.Lambda<Func<TQuery, object>>(Expression.Convert(property, typeof(object)), parameter);
+                        var minLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter);
                         aggResults["Min"] = await query.MinAsync(minLambda, cancellationToken);
                         break;
 
                     case AggregateFunction.Max:
-                        var maxLambda = Expression.Lambda<Func<TQuery, object>>(Expression.Convert(property, typeof(object)), parameter);
+                        var maxLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter);
                         aggResults["Max"] = await query.MaxAsync(maxLambda, cancellationToken);
                         break;
 
                     case AggregateFunction.Average:
-                        var avgLambda = Expression.Lambda<Func<TQuery, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter);
+                        var avgLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter);
                         aggResults["Average"] = await query.AverageAsync(avgLambda, cancellationToken);
                         break;
                 }

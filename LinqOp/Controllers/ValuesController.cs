@@ -60,25 +60,25 @@ namespace LinqOp.Controllers
         public async Task<IActionResult> GetFilteredInventory(DataSourceRequest request)
         {
 
-            var query = _bikeStoresContext.Products
-    //.Where(p => p.ProductId == 1) // filter if needed
-    .Select(p => new
-    {
-        p.ProductId,
-        p.ProductName,
-        p.BrandId,
-        BrandName = p.Brand.BrandName,
-        p.CategoryId,
-        CategoryName = p.Category.CategoryName,
-        p.ModelYear,
-        p.ListPrice
-    });
+    //        var query = _bikeStoresContext.Products
+    ////.Where(p => p.ProductId == 1) // filter if needed
+    //.Select(p => new
+    //{
+    //    p.ProductId,
+    //    p.ProductName,
+    //    p.BrandId,
+    //    BrandName = p.Brand.BrandName,
+    //    p.CategoryId,
+    //    CategoryName = p.Category.CategoryName,
+    //    p.ModelYear,
+    //    p.ListPrice
+    //});
 
 
 
-            var queryResult = await query.ToDataSourceResultAsync(request);
+            //var queryResult = await query.ToDataSourceResultAsync(request);
 
-            return Ok(queryResult);
+            //return Ok(queryResult);
 
             var orderSummaryResult = await ReadJsonFromFile<OrderSummaryResult>("data-all-order.json");
             var orderSummaries = orderSummaryResult.Data;
