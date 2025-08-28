@@ -99,7 +99,7 @@ public static class QueryableExtensions
         return query;
     }
 
-    private static async Task<IDictionary<string, IDictionary<string, object>>> ApplyAggregates<TResult >(
+    private static async Task<IDictionary<string, IDictionary<string, object>>> ApplyAggregates<TResult>(
             IQueryable<TResult> query,
             IList<AggregateDescriptor> aggregates,
             CancellationToken cancellationToken)
@@ -117,7 +117,7 @@ public static class QueryableExtensions
             var lambda = Expression.Lambda(property, parameter);
             var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
             var aggResults = new Dictionary<string, object>();
-
+            object? result = null;
             foreach (var agg in group)
             {
                 if (!LinqExtensionsHelpers.IsAggregatable(targetType, agg.Aggregate))
@@ -126,31 +126,34 @@ public static class QueryableExtensions
                 switch (agg.Aggregate)
                 {
                     case AggregateFunction.Count:
-                        aggResults["Count"] = await query.CountAsync(cancellationToken);
+                        result = await query.CountAsync(cancellationToken);
                         break;
 
                     case AggregateFunction.Sum:
                         var sumLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter);
-                        aggResults["Sum"] = await query.SumAsync(sumLambda, cancellationToken);
+                        result = await query.SumAsync(sumLambda, cancellationToken);
                         break;
 
                     case AggregateFunction.Min:
                         var minLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter);
-                        aggResults["Min"] = await query.MinAsync(minLambda, cancellationToken);
+                        result = await query.MinAsync(minLambda, cancellationToken);
                         break;
 
                     case AggregateFunction.Max:
                         var maxLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter);
-                        aggResults["Max"] = await query.MaxAsync(maxLambda, cancellationToken);
+                        result = await query.MaxAsync(maxLambda, cancellationToken);
                         break;
 
                     case AggregateFunction.Average:
                         var avgLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter);
-                        aggResults["Average"] = await query.AverageAsync(avgLambda, cancellationToken);
+                        result = await query.AverageAsync(avgLambda, cancellationToken);
                         break;
                 }
+                if (result != null)
+                {
+                    aggResults[agg.Aggregate.ToString()] = result;
+                }
             }
-
             results[member] = aggResults;
         }
 
