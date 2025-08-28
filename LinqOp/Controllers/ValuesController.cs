@@ -56,7 +56,7 @@ namespace LinqOp.Controllers
             return await ReadJsonFromFile("data-GetSelectInventory.json");
         }
 
-        [HttpPost("[action]")]
+        [HttpDelete("[action]")]
         public async Task<IActionResult> GetFilteredInventory(DataSourceRequest request)
         {
 

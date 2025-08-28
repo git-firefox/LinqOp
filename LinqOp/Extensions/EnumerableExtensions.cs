@@ -31,7 +31,7 @@ public static class EnumerableExtensions
             aggregates = ApplyAggregates(query, request.Aggregates);
         }
 
-        // Apply Aggregates 
+        // Apply Aggregates
         if (request.Take <= 0)
         {
             request.Take = 10; // set default to 10
@@ -50,7 +50,7 @@ public static class EnumerableExtensions
 
             var param = Expression.Parameter(typeof(TResult), "x");
             var member = Expression.PropertyOrField(param, filter.Member);
-            var body = BuildFilterExpression(member, filter.Operator, filter.Value);
+            var body = LinqExtensionsHelpers.BuildFilterExpression(member, filter.Operator, filter.Value);
 
             if (body == null) continue;
 
@@ -81,7 +81,6 @@ public static class EnumerableExtensions
 
             first = false;
         }
-
         return query;
     }
 
@@ -104,19 +103,24 @@ public static class EnumerableExtensions
             var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
             var aggResults = new Dictionary<string, object>();
 
+            List<object?> values = [.. query.Select(x => prop.GetValue(x, null)).Where(v => v != null)];
+            var nonNullValues = values.Where(v => v != null).ToList();
+
             foreach (var agg in group)
             {
-                if (!IsAggregatable(targetType, agg.Aggregate))
+                if (!LinqExtensionsHelpers.IsAggregatable(targetType, agg.Aggregate))
                     continue;
 
                 object? result = null;
                 switch (agg.Aggregate)
                 {
                     case AggregateFunction.Count:
+                        //result = values.Count;
                         result = query.Count();
                         break;
 
                     case AggregateFunction.Sum:
+                        //result = nonNullValues.OfType<IConvertible>().Any() ? nonNullValues.OfType<IConvertible>().Sum(v => Convert.ToDecimal(v)) : null;
                         var sumLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter).Compile();
                         result = query.Sum(sumLambda);
                         break;
@@ -124,16 +128,19 @@ public static class EnumerableExtensions
                     case AggregateFunction.Min:
                         var minLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter).Compile();
                         result = query.Min(minLambda);
+                        //result = nonNullValues.Any() ? nonNullValues.Min()! : null;
                         break;
 
                     case AggregateFunction.Max:
                         var maxLambda = Expression.Lambda<Func<TResult, object>>(Expression.Convert(property, typeof(object)), parameter).Compile();
                         result = query.Max(maxLambda);
+                        //result = nonNullValues.Any() ? nonNullValues.Max()! : null
                         break;
 
                     case AggregateFunction.Average:
                         var avgLambda = Expression.Lambda<Func<TResult, decimal?>>(Expression.Convert(property, typeof(decimal?)), parameter).Compile();
                         result = query.Average(avgLambda);
+                        //result = nonNullValues.OfType<IConvertible>().Any() ? nonNullValues.OfType<IConvertible>().Average(v => Convert.ToDecimal(v)) : null
                         break;
                 }
 
@@ -144,177 +151,6 @@ public static class EnumerableExtensions
             results[member] = aggResults;
         }
 
-
-        // Aggregates
-        //IDictionary<string, IDictionary<string, object>>? aggregates = null;
-        //if (request.Aggregates.Any())
-        //{
-        //    aggregates = new Dictionary<string, IDictionary<string, object>>();
-
-        //    foreach (var group in request.Aggregates.GroupBy(a => a.Member))
-        //    {
-        //        var dict = new Dictionary<string, object>();
-
-        //        var prop = typeof(TResult).GetProperty(group.Key, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-        //        if (prop == null) continue;
-
-        //        List<object?> values = [.. query.Select(x => prop.GetValue(x, null)).Where(v => v != null)];
-
-        //        Type targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-
-        //        var nonNullValues = values.Where(v => v != null).ToList();
-
-        //        foreach (var agg in group)
-        //        {
-        //            if (!IsAggregatable(targetType, agg.Aggregate))
-        //                continue;
-
-        //            object? result = agg.Aggregate switch
-        //            {
-        //                AggregateFunction.Sum => nonNullValues.OfType<IConvertible>().Any()
-        //                    ? nonNullValues.OfType<IConvertible>().Sum(v => Convert.ToDecimal(v))
-        //                    : null,
-
-        //                AggregateFunction.Min => nonNullValues.Any() ? nonNullValues.Min()! : null,
-
-        //                AggregateFunction.Max => nonNullValues.Any() ? nonNullValues.Max()! : null,
-
-        //                AggregateFunction.Average => nonNullValues.OfType<IConvertible>().Any()
-        //                    ? nonNullValues.OfType<IConvertible>().Average(v => Convert.ToDecimal(v))
-        //                    : null,
-
-        //                AggregateFunction.Count => values.Count,
-
-        //                _ => null
-        //            };
-
-        //            if (result != null)
-        //                dict[agg.Aggregate.ToString().ToLower()] = result;
-        //        }
-
-        //        if (dict.Any())
-        //            aggregates[group.Key] = dict;
-        //    }
-        //}
-
         return results;
     }
-
-    private static (ConstantExpression? ConstantExpression, Type? Type) GetConstant(MemberExpression member, string? value)
-    {
-        if (value == default)
-            return (Expression.Constant(null, member.Type), null);
-        try
-        {
-            var targetType = Nullable.GetUnderlyingType(member.Type) ?? member.Type;
-            var typedValue = Convert.ChangeType(value, targetType);
-            return (Expression.Constant(typedValue, member.Type), targetType);
-        }
-        catch (Exception)
-        {
-            return default;
-        }
-    }
-
-    private static Expression? BuildFilterExpression(MemberExpression member, FilterOperator op, string? value)
-    {
-        var constant = GetConstant(member, value);
-        if (constant != default)
-        {
-            Type? type = constant.Type;
-            ConstantExpression constantExpression = constant.ConstantExpression!;
-            if (type == typeof(string))
-                return BuildStringExpression(member, op, constantExpression);
-
-            if (type == typeof(bool))
-                return BuildBooleanExpression(member, op, constantExpression);
-
-            if (type != null && (type.IsPrimitive || type == typeof(decimal) || type == typeof(DateTime)))
-                return BuildComparableExpression(member, op, constantExpression);
-        }
-        return null;
-    }
-
-    private static Expression BuildStringExpression(Expression property, FilterOperator op, Expression constant)
-    {
-        return op switch
-        {
-            //"eq" => Expression.Equal(property, constant),
-            FilterOperator.Neq => Expression.NotEqual(property, constant),
-            FilterOperator.Contains => Expression.Call(property, nameof(string.Contains), null, constant),
-            FilterOperator.DoesNotContain => Expression.Not(Expression.Call(property, nameof(string.Contains), null, constant)),
-            FilterOperator.StartsWith => Expression.Call(property, nameof(string.StartsWith), null, constant),
-            FilterOperator.EndsWith => Expression.Call(property, nameof(string.EndsWith), null, constant),
-
-            FilterOperator.IsNull => Expression.Equal(property, Expression.Constant(null, property.Type)),
-            FilterOperator.IsNotNull => Expression.NotEqual(property, Expression.Constant(null, property.Type)),
-            FilterOperator.IsEmpty => Expression.Equal(property, Expression.Constant(string.Empty)),
-            FilterOperator.IsNotEmpty => Expression.NotEqual(property, Expression.Constant(string.Empty)),
-
-            _ => Expression.Equal(property, constant),
-        };
-    }
-
-    private static Expression BuildComparableExpression(Expression property, FilterOperator op, Expression constant)
-    {
-        return op switch
-        {
-            //"eq" => Expression.Equal(property, constant),
-            FilterOperator.Neq => Expression.NotEqual(property, constant),
-            FilterOperator.Gte => Expression.GreaterThanOrEqual(property, constant),
-            FilterOperator.Gt => Expression.GreaterThan(property, constant),
-            FilterOperator.Lte => Expression.LessThanOrEqual(property, constant),
-            FilterOperator.Lt => Expression.LessThan(property, constant),
-            FilterOperator.IsNull => Expression.Equal(property, Expression.Constant(null, property.Type)),
-            FilterOperator.IsNotNull => Expression.NotEqual(property, Expression.Constant(null, property.Type)),
-            _ => Expression.Equal(property, constant),
-        };
-    }
-
-    private static Expression BuildBooleanExpression(Expression property, FilterOperator op, Expression constant)
-    {
-        return op switch
-        {
-            //"eq" => Expression.Equal(property, constant),
-            FilterOperator.Neq => Expression.NotEqual(property, constant),
-            FilterOperator.IsNull => Expression.Equal(property, Expression.Constant(null, property.Type)),
-            FilterOperator.IsNotNull => Expression.NotEqual(property, Expression.Constant(null, property.Type)),
-            _ => Expression.Equal(property, constant),
-        };
-    }
-
-    private static bool IsNumericType(Type type)
-    {
-        if (type.IsEnum) return false;
-
-        switch (Type.GetTypeCode(type))
-        {
-            case TypeCode.Byte:
-            case TypeCode.SByte:
-            case TypeCode.UInt16:
-            case TypeCode.UInt32:
-            case TypeCode.UInt64:
-            case TypeCode.Int16:
-            case TypeCode.Int32:
-            case TypeCode.Int64:
-            case TypeCode.Decimal:
-            case TypeCode.Double:
-            case TypeCode.Single:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private static bool IsAggregatable(Type type, AggregateFunction function)
-    {
-        if (function == AggregateFunction.Count)
-            return true;
-
-        if (IsNumericType(type) || type == typeof(DateTime))
-            return true;
-
-        return false;
-    }
-
 }
