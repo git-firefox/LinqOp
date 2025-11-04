@@ -271,7 +271,7 @@ public static class QueryableExtensions
         if (IsNumericType(type) || type == typeof(DateTime))
             return true;
 
-        return false;
+        return false; 
     }
 }
 
